@@ -59,6 +59,8 @@ ifeq ($(ARCH),Darwin)
   EXRLIBS += -lz
 endif
 
+.SECONDARY:
+
 CC=gcc
 CXX=g++
 LD=$(CXX) $(OPT) $(MARCH)
@@ -85,6 +87,13 @@ ifeq ($(HAVE_LIBTIFF),1)
     TOOLS += bin/exrtotiff
 endif
 
+LUAJIT_VERSION=LuaJIT-2.0.1
+LUAJIT_URL=http://luajit.org/download/$(LUAJIT_VERSION).tar.gz
+LUAJIT_TAR=$(LUAJIT_VERSION).tar.gz
+LUAJIT_DIR=objs/$(LUAJIT_VERSION)
+LUAJIT_LIB=objs/libluajit.a
+LIBS += -Lobjs -lluajit
+
 default: dirs bin/pbrt $(TOOLS)
 
 bin/%: dirs
@@ -110,9 +119,14 @@ objs/cameras_%.o: cameras/%.cpp
 	@echo "Building object $@"
 	@$(CXX) $(CXXFLAGS) -o $@ -c $<
 
+objs/pbrtlualib.h:	core/pbrtlualib.lua $(LUAJIT_LIB)
+	LUA_PATH=$(LUAJIT_DIR)/src/?.lua $(LUAJIT_DIR)/src/luajit -bg $< $@
+
 objs/core_%.o: core/%.cpp
 	@echo "Building object $@"
-	@$(CXX) $(CXXFLAGS) -o $@ -c $<
+	@$(CXX) $(CXXFLAGS) -I$(LUAJIT_DIR)/src -o $@ -c $<
+
+objs/core_pbrtlua.o:	objs/pbrtlualib.h
 
 objs/core_%.o: core/%.c
 	@echo "Building object $@"
@@ -170,9 +184,14 @@ objs/tools_%.o: tools/%.cpp
 	@echo "Building object $@"
 	@$(CXX) $(CXXFLAGS) -o $@ -c $<
 
+#makes luajit happy on osx 10.6 (otherwise luaL_newstate returns NULL)
+ifeq ($(ARCH), Darwin)
+PBRTLFLAGS = -pagezero_size 10000 -image_base 100000000 
+endif
+
 bin/pbrt: objs/main_pbrt.o objs/libpbrt.a
 	@echo "Linking $@"
-	@$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
+	@$(CXX) $(CXXFLAGS) $(PBRTLFLAGS) -o $@ $^ $(LIBS)
 
 bin/%: objs/tools_%.o objs/libpbrt.a 
 	@echo "Linking $@"
@@ -201,5 +220,17 @@ endif
 
 $(RENDERER_BINARY): $(RENDERER_OBJS) $(CORE_LIB)
 
+objs/$(LUAJIT_TAR):
+ifeq ($(ARCH), Darwin)
+	curl $(LUAJIT_URL) -o $@
+else
+	wget $(LUAJIT_URL) -O $@
+endif
+
+$(LUAJIT_LIB): objs/$(LUAJIT_TAR)
+	(cd objs; tar -xf $(LUAJIT_TAR))
+	(cd $(LUAJIT_DIR); make CC=$(CC))
+	cp $(LUAJIT_DIR)/src/libluajit.a $(LUAJIT_LIB)
+
 clean:
-	rm -f objs/* bin/* core/pbrtlex.[ch]* core/pbrtparse.[ch]*
+	rm -rf objs/* bin/* core/pbrtlex.[ch]* core/pbrtparse.[ch]*

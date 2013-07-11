@@ -36,6 +36,15 @@
 #include "probes.h"
 #include "parser.h"
 #include "parallel.h"
+#include "pbrtlua.h"
+#include <algorithm>
+
+bool endswith(const std::string & str, const std::string & suffix) {
+    if(suffix.size() > str.size())
+        return false;
+    else
+        return std::equal(str.begin() + str.size() - suffix.size(), str.end(), suffix.begin());
+}
 
 // main program
 int main(int argc, char *argv[]) {
@@ -66,6 +75,7 @@ int main(int argc, char *argv[]) {
         fflush(stdout);
     }
     pbrtInit(options);
+    lua_State * L = pbrtLuaInit();
     // Process scene description
     PBRT_STARTED_PARSING();
     if (filenames.size() == 0) {
@@ -74,7 +84,9 @@ int main(int argc, char *argv[]) {
     } else {
         // Parse scene from input files
         for (u_int i = 0; i < filenames.size(); i++)
-            if (!ParseFile(filenames[i]))
+            if(endswith(filenames[i],".lua"))
+                pbrtLuaRun(L, filenames[i].c_str());
+            else if (!ParseFile(filenames[i]))
                 Error("Couldn't open scene file \"%s\"", filenames[i].c_str());
     }
     pbrtCleanup();
